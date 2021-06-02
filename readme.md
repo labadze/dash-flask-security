@@ -19,7 +19,7 @@ Here are features which is minimalistic but ready for real life:
 
  - Clone repo
  - Then create venv and install requirements
- - Do flask migrations `flask db init` read more at [https://flask-migrate.readthedocs.io/en/latest/](https://flask-migrate.readthedocs.io/en/latest/)
+ - Do flask migrations `flask db upgrade` read more at [https://flask-migrate.readthedocs.io/en/latest/](https://flask-migrate.readthedocs.io/en/latest/)
  - Setup envs to make emails works
  - Run application  `python -m flask run`
  - Open page on [http://127.0.0.1:5000](http://127.0.0.1:5000)

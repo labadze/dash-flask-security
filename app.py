@@ -39,10 +39,13 @@ import dash_html_components as html
 from flask_mail import Message, Mail
 
 from flask import request
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'https://www.w3schools.com/w3css/4/w3.css']
 
 server = Flask(__name__)
+server.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app = dash.Dash(__name__, server=server,
                 title='DarkEngine',
                 update_title='Loading...',
@@ -51,6 +54,19 @@ app = dash.Dash(__name__, server=server,
 
 # Updating the Flask Server configuration with Secret Key to encrypt the user session cookie
 server.config.update(SECRET_KEY=os.getenv('SECRET_KEY'))
+server.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///identifier.sqlite'
+
+
+db = SQLAlchemy(server)
+migrate = Migrate(server, db)
+
+
+class Users(db.Model):
+    id = db.Column(db.String(128), primary_key=True)
+    email = db.Column(db.String(128))
+    password = db.Column(db.String(512))
+    activated_at = db.Column(db.String(128))
+
 
 # Login manager object will be used to login / logout users
 login_manager = LoginManager()
@@ -65,7 +81,6 @@ server.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 server.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 server.config['MAIL_USE_TLS'] = False
 server.config['MAIL_USE_SSL'] = True
-mail = Mail(server)
 
 
 def dict_factory(cursor, row):
