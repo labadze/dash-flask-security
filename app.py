@@ -11,8 +11,7 @@ import uuid
 from sqlite3 import Error
 from urllib import parse
 
-# import bcrypt
-from flask_bcrypt import bcrypt
+import bcrypt
 import jwt
 
 from random import randint
