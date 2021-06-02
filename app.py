@@ -1,26 +1,7 @@
-import base64
-import datetime
-# from dotenv import load_dotenv
-import os
-import re
-import secrets
-import sqlite3
-import string
-import time
-import uuid
-from sqlite3 import Error
-from urllib import parse
-
-# import bcrypt
-
-import jwt
-
-from random import randint
-
 from dash.exceptions import PreventUpdate
 from flask import Flask
 from flask_login import login_user, LoginManager, UserMixin, logout_user, current_user
-from flask_bcrypt import Bcrypt
+# from flask_bcrypt import Bcrypt
 import dash
 from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
@@ -40,6 +21,26 @@ from flask_mail import Message, Mail
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 
+import base64
+import datetime
+# from dotenv import load_dotenv
+import os
+import re
+import secrets
+import sqlite3
+import string
+import time
+import uuid
+from sqlite3 import Error
+from urllib import parse
+
+import bcrypt
+
+import jwt
+
+from random import randint
+
+
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'https://www.w3schools.com/w3css/4/w3.css']
 
 server = Flask(__name__)
@@ -54,7 +55,7 @@ app = dash.Dash(__name__, server=server,
 server.config.update(SECRET_KEY=os.getenv('SECRET_KEY'))
 server.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///identifier.sqlite'
 
-bcrypt = Bcrypt(server)
+# bcrypt = Bcrypt(server)
 
 db = SQLAlchemy(server)
 migrate = Migrate(server, db)
