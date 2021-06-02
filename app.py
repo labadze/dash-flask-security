@@ -1,6 +1,6 @@
 import base64
 import datetime
-import json
+from dotenv import load_dotenv
 import os
 import re
 import secrets
@@ -12,7 +12,6 @@ from sqlite3 import Error
 from urllib import parse
 
 import bcrypt
-import flask
 
 import jwt
 
@@ -38,7 +37,6 @@ import dash_html_components as html
 # Exposing the Flask Server to enable configuring it for logging in
 from flask_mail import Message, Mail
 
-from flask import request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 
@@ -55,7 +53,6 @@ app = dash.Dash(__name__, server=server,
 # Updating the Flask Server configuration with Secret Key to encrypt the user session cookie
 server.config.update(SECRET_KEY=os.getenv('SECRET_KEY'))
 server.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///identifier.sqlite'
-
 
 db = SQLAlchemy(server)
 migrate = Migrate(server, db)
@@ -106,10 +103,10 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    ''' This function loads the user by user id. Typically this looks up the user from a user database.
+    """ This function loads the user by user id. Typically this looks up the user from a user database.
         We won't be registering or looking up users in this example, since we'll just login using LDAP server.
         So we'll simply return a User object with the passed in username.
-    '''
+    """
     conn = sqlite3.connect('identifier.sqlite')
     conn.row_factory = dict_factory
     curs = conn.cursor()
@@ -119,8 +116,8 @@ def load_user(user_id):
     if user is None:
         return None
     else:
-        print(user)
-        print('LOGIN MANAGER FOUND')
+        # print(user)
+        # print('LOGIN MANAGER FOUND')
         return User(user_id=user_id, email=user["email"], password=user["password"])
 
 
@@ -135,7 +132,7 @@ def is_input_email(value):
 
 # Finds user by email checks if user exists in database
 def find_user_by_email(email_address):
-    print('CHECKING USER BY EMAIL')
+    # print('CHECKING USER BY EMAIL')
     conn = sqlite3.connect('identifier.sqlite')
     conn.row_factory = dict_factory
     curs = conn.cursor()
@@ -220,26 +217,24 @@ def generate_account_confirmation_token(email_address, user_id):
 def hash_string(value):
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(bytes(value, encoding="utf-8"), salt)
-    print(hashed)
     return hashed
 
 
 #  Generates new secured password
 def generate_new_password():
     # secure random string
-    secure_str = ''.join((secrets.choice(string.ascii_letters) for i in range(8)))
-    print(secure_str)
+    # secure_str = ''.join((secrets.choice(string.ascii_letters) for i in range(8)))
+    # print(secure_str)
     # Output QQkABLyK
 
     # secure password
     password = ''.join((secrets.choice(string.ascii_letters + string.digits + string.punctuation) for i in range(8)))
-    print(password)
+    # print(password)
     # output 4x]>@;4)
     return password
 
 
 def decode_artifacts_for_reset_password(electric_mail, token, code):
-    print(code)
     # first check if token is no expired
     # Then define if it's not before
     # After check issuer
@@ -250,19 +245,19 @@ def decode_artifacts_for_reset_password(electric_mail, token, code):
     try:
         decoded = jwt.decode(token, key=str(phrase), issuer="DarkEngine", audience=['purpose:reset_password'],
                              algorithms=["HS256"])
-        print(decoded)
+        # print(decoded)
         if bcrypt.checkpw(password=decoded["sub"]["email"].encode(), hashed_password=electric_mail.encode()):
-            print('Email === hashed email')
-            print(decoded["sub"]["code"])
+            # print('Email === hashed email')
+            # print(decoded["sub"]["code"])
             if str(decoded["sub"]["code"]) == str(code):
-                print('Code is OK')
+                # print('Code is OK')
                 if not decoded["sub"]["user_id"]:
                     return False
                 else:
-                    print('USER FOUND')
+                    # print('USER FOUND')
                     user_id = decoded["sub"]["user_id"]
                     new_password = generate_new_password()
-                    print(new_password)
+                    # print(new_password)
                     hashed_password = hash_string(new_password)
                     update_password_in_db(user_id=user_id, new_password=hashed_password)
                     send_email_reset_password(email=decoded["sub"]["email"], new_password=new_password)
@@ -278,15 +273,15 @@ def decode_artifacts_for_reset_password(electric_mail, token, code):
 
 def decode_artifacts_for_account_verification(electric_mail, token):
     # decoded = jwt.decode(token, options={"require": ["exp", "iss", "sub"]})
-    print('START ACCOUNT VERIFICATION')
+    # print('START ACCOUNT VERIFICATION')
     phrase = os.getenv('JWT_SECRET')
-    print(phrase)
+    # print(phrase)
     try:
         decoded = jwt.decode(token, key=str(phrase), issuer="DarkEngine", audience=['purpose:activate_account'],
                              algorithms=["HS256"]
                              )
         # artifact = json.dumps(decoded)
-        print(decoded)
+        # print(decoded)
         # for key, value in decoded.items():
         # print(key)
         # print(value)
@@ -352,8 +347,13 @@ def send_email_recover_password(email, hashed_email, token, code):
                        'only person who knows password even system keeps your password encrypted. But we can help you '
                        'to reset you password. To reset password please follow link ' + reset_url + ' and use '
                                                                                                     'following code: '
-                       + code + 'Code is valid for 30 minutes.')
-    mail.send(msg)
+                       + code + ' Code is valid for 30 minutes.')
+    try:
+        mail.send(msg)
+        return True
+    except BaseException as e:
+        print(e)
+        return False
 
 
 # Send email with new password after password reset procedure
@@ -362,7 +362,12 @@ def send_email_reset_password(email, new_password):
     msg = Message(subject="Reset password", sender=sender, recipients=[email],
                   body='Your new password is : ' + new_password +
                        ' Please change is as soon as possible')
-    mail.send(msg)
+    try:
+        mail.send(msg)
+        return True
+    except BaseException as e:
+        print(e)
+        return False
 
 
 # Sends user email with verification link and password for account
@@ -378,7 +383,12 @@ def send_email_with_account_verification_link(email_address, hashed_email, token
                        'account. You can log in to your account '
                        'after confirmation using password ' +
                        password + ' Have a nice day.')
-    mail.send(msg)
+    try:
+        mail.send(msg)
+        return True
+    except BaseException as e:
+        print(e)
+        return False
 
 
 # Send user email after account activation
@@ -390,7 +400,12 @@ def send_email_after_account_activation(email_address):
                                                                          'Now your account is activated. You can '
                                                                          'log in using your ' + email_address + ' and'
                                                                                                                 'password. Thank you.')
-    mail.send(msg)
+    try:
+        mail.send(msg)
+        return True
+    except BaseException as e:
+        print(e)
+        return False
 
 
 # Send verification code to change password
@@ -402,7 +417,12 @@ def send_email_with_verification_code_to_change_password(email_address, code):
                   body='Hello, you\'re receiving this email because you decided to change password on app ' + app_url + '.  '
                                                                                                                         'Your password change request was authorized, so to complete password change procedure you need verify it with code  '
                                                                                                                         '' + code + ' do not share this code to someone else.')
-    mail.send(msg)
+    try:
+        mail.send(msg)
+        return True
+    except BaseException as e:
+        print(e)
+        return False
 
 
 # User status management views
@@ -632,9 +652,8 @@ def register_button_click(n_clicks, email):
     Output('output-state-for-activate-account', 'children'),
     [Input('url', 'search')])
 def account_activation(search):
-    print('Request', search)
     query = parse.parse_qs(parse.urlparse(search).query)
-    print({k: v[0] if v and len(v) == 1 else v for k, v in query.items()})
+    # print({k: v[0] if v and len(v) == 1 else v for k, v in query.items()})
     result = {k: v[0] if v and len(v) == 1 else v for k, v in query.items()}
     if result is None:
         return '/activate_account', 'Cannot complete your request...'
@@ -664,7 +683,7 @@ def account_activation(search):
 def reset_user_password(n_clicks, search, code):
     # ctx = dash.callback_context
     # print(ctx.triggered[0])
-    print(code)
+    # print(code)
     query = parse.parse_qs(parse.urlparse(search).query)
     result = {k: v[0] if v and len(v) == 1 else v for k, v in query.items()}
     if n_clicks == 0 and not code:
@@ -918,4 +937,5 @@ def display_page(pathname):
 
 
 if __name__ == '__main__':
+    load_dotenv()
     app.run_server(debug=True)
