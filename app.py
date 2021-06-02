@@ -11,7 +11,8 @@ import uuid
 from sqlite3 import Error
 from urllib import parse
 
-import bcrypt
+# import bcrypt
+
 import jwt
 
 from random import randint
@@ -19,7 +20,7 @@ from random import randint
 from dash.exceptions import PreventUpdate
 from flask import Flask
 from flask_login import login_user, LoginManager, UserMixin, logout_user, current_user
-
+from flask_bcrypt import Bcrypt
 import dash
 from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
@@ -52,6 +53,8 @@ app = dash.Dash(__name__, server=server,
 # Updating the Flask Server configuration with Secret Key to encrypt the user session cookie
 server.config.update(SECRET_KEY=os.getenv('SECRET_KEY'))
 server.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///identifier.sqlite'
+
+bcrypt = Bcrypt(server)
 
 db = SQLAlchemy(server)
 migrate = Migrate(server, db)
