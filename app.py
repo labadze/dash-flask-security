@@ -70,14 +70,14 @@ login_manager = LoginManager()
 login_manager.init_app(server)
 login_manager.login_view = '/login'
 
-mail = Mail(server)
-
 server.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
 server.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT'))
 server.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 server.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 server.config['MAIL_USE_TLS'] = False
 server.config['MAIL_USE_SSL'] = True
+
+mail = Mail(server)
 
 
 def dict_factory(cursor, row):
@@ -95,10 +95,6 @@ class User(UserMixin):
         self.id = user_id
         self.email = email
         self.password = password
-
-    # @classmethod
-    # def get_id(self):
-    #     return (self.user_id)
 
 
 @login_manager.user_loader
@@ -213,6 +209,21 @@ def generate_account_confirmation_token(email_address, user_id):
     return encoded
 
 
+# Generates token to change password
+def generate_change_password_token(electric_mail, user_id, confirmation_code):
+    secret = os.getenv("JWT_SECRET")
+    encoded = jwt.encode({
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(seconds=300),
+        # "nbf": datetime.datetime.utcnow() + datetime.timedelta(seconds=30),
+        "iss": "DarkEngine",
+        "aud": ['purpose:change_password'],
+        "sub": {"email": electric_mail, "code": confirmation_code, "user_id": user_id},
+        "iat": datetime.datetime.utcnow()
+    }, key=secret, algorithm="HS256",
+        headers={"kid": str(uuid.uuid5(uuid.NAMESPACE_DNS, electric_mail))})
+    return encoded
+
+
 # Can hash email to pass it to url or password
 def hash_string(value):
     salt = bcrypt.gensalt()
@@ -234,6 +245,7 @@ def generate_new_password():
     return password
 
 
+# Decode reset password token
 def decode_artifacts_for_reset_password(electric_mail, token, code):
     # first check if token is no expired
     # Then define if it's not before
@@ -260,8 +272,10 @@ def decode_artifacts_for_reset_password(electric_mail, token, code):
                     # print(new_password)
                     hashed_password = hash_string(new_password)
                     update_password_in_db(user_id=user_id, new_password=hashed_password)
-                    send_email_reset_password(email=decoded["sub"]["email"], new_password=new_password)
-                    return True
+                    if send_email_reset_password(email=decoded["sub"]["email"], new_password=new_password) is True:
+                        return True
+                    else:
+                        return False
             else:
                 return False
         else:
@@ -271,6 +285,7 @@ def decode_artifacts_for_reset_password(electric_mail, token, code):
         return False
 
 
+# Decode account verification token
 def decode_artifacts_for_account_verification(electric_mail, token):
     # decoded = jwt.decode(token, options={"require": ["exp", "iss", "sub"]})
     # print('START ACCOUNT VERIFICATION')
@@ -288,8 +303,35 @@ def decode_artifacts_for_account_verification(electric_mail, token):
 
         if bcrypt.checkpw(password=decoded["sub"]["email"].encode(), hashed_password=electric_mail.encode()):
             activate_user_in_database(decoded["sub"]["user_id"])
-            send_email_after_account_activation(decoded["sub"]["email"])
-            return True
+            if send_email_after_account_activation(decoded["sub"]["email"]) is True:
+                return True
+            else:
+                return False
+        else:
+            return False
+    except BaseException as e:
+        print(e)
+        return False
+
+
+# Decode change password token
+def decode_artifacts_for_change_password(electric_mail, token, user_id, code):
+    phrase = os.getenv('JWT_SECRET')
+    try:
+        decoded = jwt.decode(token, key=str(phrase), issuer="DarkEngine",
+                             audience=['purpose:change_password'], algorithms=["HS256"])
+        if bcrypt.checkpw(password=decoded["sub"]["email"].encode(), hashed_password=electric_mail.encode()):
+            if str(decoded["sub"]["code"]) == str(code):
+                if not decoded["sub"]["user_id"]:
+                    return False
+                else:
+                    token_user_id = decoded["sub"]["user_id"]
+                    if token_user_id == user_id:
+                        return True
+                    else:
+                        return False
+            else:
+                return False
         else:
             return False
     except BaseException as e:
@@ -409,14 +451,26 @@ def send_email_after_account_activation(email_address):
 
 
 # Send verification code to change password
-# Send user email after account activation
-def send_email_with_verification_code_to_change_password(email_address, code):
+def send_email_with_verification_code_to_change_password(email_address, hashed_email, token, code):
     app_url = os.getenv('APP_URL')
     sender = os.getenv('MAIL_USERNAME')
-    msg = Message(subject="Change password verification", sender=sender, recipients=[email_address],
-                  body='Hello, you\'re receiving this email because you decided to change password on app ' + app_url + '.  '
-                                                                                                                        'Your password change request was authorized, so to complete password change procedure you need verify it with code  '
-                                                                                                                        '' + code + ' do not share this code to someone else.')
+    reset_url = app_url + '/change_password_commit?electric_mail=' + hashed_email.decode('utf-8') + '&token=' + token
+    msg = Message(subject="Change password", sender=sender, recipients=[email_address],
+                  body='You authorized password change process. To complete this procedure please follow link ' + reset_url + ' during validation you have to use following code: ' + code + ' Code is valid for 15 minutes.')
+    try:
+        mail.send(msg)
+        return True
+    except BaseException as e:
+        print(e)
+        return False
+
+
+# Send user email after account activation
+def send_email_after_password_successfully_changed(email_address):
+    app_url = os.getenv('APP_URL')
+    sender = os.getenv('MAIL_USERNAME')
+    msg = Message(subject="Password was changed successfully", sender=sender, recipients=[email_address],
+                  body='Your password at website ' + app_url + '.  was successfully changed')
     try:
         mail.send(msg)
         return True
@@ -575,7 +629,7 @@ activate_account = html.Div([dcc.Location(id='activate_account', refresh=True),
                              ])
 
 # Start change password
-change_password_initiate = html.Div([dcc.Location(id='recover-password', refresh=True),
+change_password_initiate = html.Div([dcc.Location(id='change_password_init', refresh=True),
                                      html.H2('''Please provide your current password:''', id='h1',
                                              className='w3-center'),
                                      html.Br(),
@@ -592,10 +646,36 @@ change_password_initiate = html.Div([dcc.Location(id='recover-password', refresh
                                                      type='submit', id='change-password-init-button'),
                                      ], className='w3-center'),
                                      html.Br(),
-                                     html.Br(),
-                                     dcc.Link('Login', href='/login', className='w3-center'),
-                                     html.Br(),
                                      dcc.Link('Home', href='/')], className='w3-center')
+
+change_password_commit_view = html.Div([dcc.Location(id='change_password_commit', refresh=True),
+                                        html.H2('''Please provide confirmation code:''', id='h1',
+                                                className='w3-center'),
+                                        html.Br(),
+                                        html.Div([
+                                            dcc.Input(placeholder='6 Digit Code',
+                                                      type='number', id='code-box'),
+                                        ], className='w3-center'),
+                                        html.Br(),
+                                        html.Div([
+                                            dcc.Input(placeholder='New password',
+                                                      type='password', id='new-password-box'),
+                                        ], className='w3-center'),
+                                        html.Br(),
+                                        html.Div([
+                                            dcc.Input(placeholder='Confirm New password',
+                                                      type='password', id='confirm-new-password-box'),
+                                        ], className='w3-center'),
+                                        html.Br(),
+                                        html.Div([
+                                            html.Button(children='Submit new password', n_clicks=0,
+                                                        type='submit', id='change-password-commit-button'),
+                                        ], className='w3-center'),
+                                        html.Br(),
+                                        html.Div(children='', id='output-state-for-change-password-commit',
+                                                 className='w3-center'),
+                                        html.Br(),
+                                        dcc.Link('Home', href='/')], className='w3-center')
 
 
 # Callback function to login the user, or update the screen if the username or password are incorrect
@@ -669,7 +749,8 @@ def account_activation(search):
         if check_d is True:
             return '/activate_account', 'Your account successfully activated'
         else:
-            return '/activate_account', 'Activation URL is expired or already used or broken contact administrator or ' \
+            return '/activate_account', 'Activation URL is expired or ' \
+                                        'already used or broken contact administrator or ' \
                                         'request another activation URL from your email '
 
 
@@ -683,7 +764,6 @@ def account_activation(search):
 def reset_user_password(n_clicks, search, code):
     # ctx = dash.callback_context
     # print(ctx.triggered[0])
-    # print(code)
     query = parse.parse_qs(parse.urlparse(search).query)
     result = {k: v[0] if v and len(v) == 1 else v for k, v in query.items()}
     if n_clicks == 0 and not code:
@@ -738,10 +818,12 @@ def recover_password_button_click(n_clicks, electric_mail):
                                                       confirmation_code=confirmation_code)
                 hashed_electric_mail = hash_string(electric_mail.strip().lower().replace(" ", ""))
 
-                send_email_recover_password(email=electric_mail.strip().lower().replace(" ", ""),
-                                            hashed_email=hashed_electric_mail, token=token,
-                                            code=confirmation_code)
-                return '/cmd_success', 'Recover password link was sent to your email ' + electric_mail
+                if send_email_recover_password(email=electric_mail.strip().lower().replace(" ", ""),
+                                               hashed_email=hashed_electric_mail, token=token,
+                                               code=confirmation_code) is True:
+                    return '/cmd_success', 'Recover password link was sent to your email ' + electric_mail
+                else:
+                    return '/fail', 'We cannot send email right now ' + electric_mail
 
 
 # Callback provides change password initiate process
@@ -756,54 +838,78 @@ def change_password_init_button_click(n_clicks, current_password):
     else:
         if not current_password:
             return '/change_password_init', 'Current password was not provided'
-        usr = find_user_by_id(current_user.get_id())
-        if usr is None:
-            logout_user()
-            return '/change_password_init', 'User was not detected'
         else:
+            usr = find_user_by_id(current_user.get_id())
+            print(usr)
             if is_password_valid(password=current_password, hashed_password=usr["password"]) is True:
-                # Generate confirmation code
-                confirmation_code = generate_verification_code()
-                # Send confirmation code
-                send_email_with_verification_code_to_change_password(email_address=usr["email"], code=confirmation_code)
-                # Encrypt confirmation code to pass to next page
-                encrypted_code = hash_string(confirmation_code)
                 # Encode expiration unix timestamp and pass
-                expiration_ts = round(time.time() * 1000)
-                exp_bytes = str(expiration_ts).encode('utf-8')
-                base64_bytes = base64.b64encode(exp_bytes)
-                base64_message = base64_bytes.decode('utf-8')
-                # Redirect to change password commit page
-                return '/change_password_commit?c=' + encrypted_code.decode(
-                    'utf-8') + '&exp=' + base64_message, 'Now provide verification code, new password and new password ' \
-                                                         'confirmation '
+                # expiration_ts = round(time.time() * 1000)
+                # exp_bytes = str(expiration_ts).encode('utf-8')
+                # base64_bytes = base64.b64encode(exp_bytes)
+                # base64_message = base64_bytes.decode('utf-8')
+                code = generate_verification_code()
+                token = generate_change_password_token(electric_mail=usr["email"],
+                                                       user_id=usr["id"], confirmation_code=code)
+                hashed_email = hash_string(usr["email"])
+                if send_email_with_verification_code_to_change_password(email_address=usr["email"],
+                                                                        hashed_email=hashed_email, token=token,
+                                                                        code=code) is True:
+
+                    return '/change_password_init', 'Your request was authorized, please check your email, follow ' \
+                                                    'steps ' \
+                                                    'to complete password change procedure '
+                else:
+                    return '/change_password_init', 'Something went wrong with email server please contact ' \
+                                                    'administrator... '
+            else:
+                return '/change_password_init', 'Incorrect password...'
 
 
-# TODO: complete change password
-# Callback provides change password initiate process
+# Callback provides change password commit process
 @app.callback(
     Output('change_password_commit', 'pathname'),
     Output('output-state-for-change-password-commit', 'children'),
     [Input('change-password-commit-button', 'n_clicks')],
-    [State('current-password-box', 'value')])
-def change_password_init_button_click(n_clicks, current_password):
-    if n_clicks == 0:
+    [Input('url', 'search')],
+    [State('code-box', 'value')],
+    [State('new-password-box', 'value')],
+    [State('confirm-new-password-box', 'value')])
+def change_password_commit_button_click(n_clicks, search, code, new_password, confirm_new_password):
+    query = parse.parse_qs(parse.urlparse(search).query)
+    result = {k: v[0] if v and len(v) == 1 else v for k, v in query.items()}
+    if n_clicks == 0 and not code:
         raise PreventUpdate
     else:
-        if not current_password:
-            return '/change_password_init', 'Current password was not provided'
-        usr = find_user_by_id(current_user.get_id())
-        if usr is None:
-            logout_user()
-            return '/change_password_init', 'User was not detected'
-        else:
-            if is_password_valid(password=current_password, hashed_password=usr["password"]) is True:
-                # Generate confirmation code
-                confirmation_code = generate_verification_code()
-                # Send confirmation code
-                send_email_with_verification_code_to_change_password(email_address=usr["email"], code=confirmation_code)
-                # Redirect to change password commit page
-                return '/change_password_commit', 'Now provide verification code, new password and new password confirmation'
+        if result is not None:
+            if 'electric_mail' not in result or 'token' not in result:
+                return '/change_password_commit', 'We cannot complete your request...'
+            elif not result["electric_mail"]:
+                return '/change_password_commit', 'Undetected user...'
+            elif not result["token"]:
+                return '/change_password_commit', 'Missing token ...'
+            else:
+                if n_clicks > 0:
+                    print(search)
+                    usr = find_user_by_id(current_user.get_id())
+                    if usr is None:
+                        logout_user()
+                        return '/change_password_commit', 'User was not detected'
+                    else:
+                        if not code or not new_password or not confirm_new_password:
+                            return '/change_password_commit', 'To complete operation you need to provide verification ' \
+                                                              'code, password and confirm password '
+                        else:
+                            if decode_artifacts_for_change_password(electric_mail=result["electric_mail"], code=code,
+                                                                    user_id=usr["id"], token=result["token"]) is True:
+                                if new_password == confirm_new_password:
+                                    hashed_password = hash_string(new_password)
+                                    update_password_in_db(user_id=usr["id"], new_password=hashed_password)
+                                    send_email_after_password_successfully_changed(usr["email"])
+                                    return '/change_password_commit', 'Your password was successfully changed'
+                                else:
+                                    return '/change_password_commit', 'password don\'t match.'
+                            else:
+                                return '/change_password_commit', 'URL is expired, broken invalid...'
 
 
 # Main Layout
@@ -866,7 +972,7 @@ def page_2_radios(value):
 
 @app.callback(Output('user-status-div', 'children'), Output('login-status', 'data'), [Input('url', 'pathname')])
 def login_status(url):
-    ''' callback to display login/logout link in the header '''
+    """ callback to display login/logout link in the header """
     if hasattr(current_user, 'is_authenticated') and current_user.is_authenticated \
             and url != '/logout':  # If the URL is /logout, then the user is about to be logged out anyways
         return dcc.Link('logout', href='/logout'), current_user.get_id()
@@ -877,14 +983,14 @@ def login_status(url):
 # Main router
 @app.callback(Output('page-content', 'children'), Output('redirect', 'pathname'), [Input('url', 'pathname')])
 def display_page(pathname):
-    ''' callback to determine layout to return '''
+    """ callback to determine layout to return """
     # We need to determine two things for everytime the user navigates: Can they access this page? If so,
     # we just return the view Otherwise, if they need to be authenticated first, we need to redirect them to the
     # login page So we have two outputs, the first is which view we'll return The second one is a redirection to
     # another page is needed In most cases, we won't need to redirect. Instead of having to return two variables
     # everytime in the if statement We setup the defaults at the beginning, with redirect to dash.no_update; which
     # simply means, just keep the requested url
-    view = None
+    # view = None
     url = dash.no_update
     if pathname == '/login':
         view = login
@@ -927,6 +1033,12 @@ def display_page(pathname):
     elif pathname == '/change_password_init':
         if current_user.is_authenticated:
             view = change_password_initiate
+        else:
+            view = 'Redirecting to login...'
+            url = '/login'
+    elif pathname == '/change_password_commit':
+        if current_user.is_authenticated:
+            view = change_password_commit_view
         else:
             view = 'Redirecting to login...'
             url = '/login'
