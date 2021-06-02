@@ -1,6 +1,6 @@
 import base64
 import datetime
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 import os
 import re
 import secrets
@@ -1049,5 +1049,5 @@ def display_page(pathname):
 
 
 if __name__ == '__main__':
-    load_dotenv()
+    # load_dotenv()
     app.run_server(debug=True)
