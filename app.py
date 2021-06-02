@@ -23,7 +23,7 @@ from flask_migrate import Migrate
 
 import base64
 import datetime
-# from dotenv import load_dotenv
+from dotenv import load_dotenv
 import os
 import re
 import secrets
@@ -44,6 +44,7 @@ from random import randint
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', 'https://www.w3schools.com/w3css/4/w3.css']
 
 server = Flask(__name__)
+load_dotenv()
 server.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app = dash.Dash(__name__, server=server,
                 title='DarkEngine',
