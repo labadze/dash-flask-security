@@ -932,6 +932,8 @@ index_page = html.Div([
     dcc.Link('Go to Page 1', href='/page-1'),
     html.Br(),
     dcc.Link('Go to Page 2', href='/page-2'),
+    html.Br(),
+    dcc.Link('Change password', href='/change_password_init'),
 ])
 
 page_1_layout = html.Div([
